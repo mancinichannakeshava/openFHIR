@@ -34,6 +34,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -264,6 +266,7 @@ public class FhirToOpenEhr {
         int i = 0;
         for (final Base relevantResource : relevantResources) {
             boolean somethingWasAdded = false;
+            int highestFirstNIndex = -1;
             for (final FhirToOpenEhrHelper fhirToOpenEhrHelper : artifactHelpers) {
                 final Condition openEhrTypeCondition = fhirToOpenEhrHelper.getTypeCondition();
                 if (openEhrTypeCondition != null
@@ -276,6 +279,10 @@ public class FhirToOpenEhr {
                         .startsWith(mainMultiple))) {
 
                     final String openEhrPath = fhirToOpenEhrHelper.getOpenEhrPath();
+                    if (highestFirstNIndex == -1) {
+                        highestFirstNIndex = findHighestFirstNIndex(finalFlat, openEhrPath);
+                        i = highestFirstNIndex == -1 ? i : highestFirstNIndex;
+                    }
                     mainMultiple =
                             ignoreMultipleFlag(openEhrPath) ? null : openEhrPath.split(RECURRING_SYNTAX_ESCAPED)[0];
                     cloned.setOpenEhrPath(
@@ -297,6 +304,24 @@ public class FhirToOpenEhr {
                         relevantResource.getIdBase());
             }
         }
+    }
+
+    private int findHighestFirstNIndex(JsonObject jsonObj, String searchPath) {
+        int nPos = searchPath.indexOf("[n]");
+        if (nPos == -1) {
+            return -1; // Return -1 if [n] is not present
+        }
+
+        String staticPart = searchPath.substring(0, nPos);
+        Pattern pattern = Pattern.compile("^" + Pattern.quote(staticPart) + ":(\\d+).*$");
+
+        return jsonObj.keySet().stream()
+                .map(pattern::matcher)
+                .filter(Matcher::matches)
+                .map(matcher -> Integer.parseInt(matcher.group(1)))
+                .max(Integer::compareTo)
+                .map(max -> max + 1) // Increment the max index by 1
+                .orElse(0); // Return 0 if no matches
     }
 
     private boolean ignoreMultipleFlag(final String openEhrPath) {
